@@ -9,6 +9,7 @@ import (
 	"github.com/ExpressenAB/bigip_exporter/collector"
 	"strings"
 	"github.com/pr8kerl/f5er/f5"
+	"fmt"
 )
 
 var (
@@ -18,7 +19,6 @@ var (
 )
 
 func createBigIPCollectors() map[string]*collector.BigipCollector{
-	configuration := config.GetConfig()
 	list := make(map[string]*collector.BigipCollector)
 	for host, _ := range configuration.Lookup {
 		bigipEndpoint := configuration.Lookup[host].Host + ":" + strconv.Itoa(configuration.Lookup[host].Port)
@@ -35,6 +35,11 @@ func createBigIPCollectors() map[string]*collector.BigipCollector{
 		bigip := f5.New(bigipEndpoint,configuration.Lookup[host].Username,configuration.Lookup[host].Password,authMethod)
 		list[host], _ = collector.NewBigipCollector(bigip, configuration.Exporter.Namespace, exporterPartitionsList)
 	}
+	debugStatement := ""
+	for key, value := range list {
+		debugStatement += fmt.Sprintf("Key:", key, "Value:", value)
+	}
+	logger.Debugf("List of collectors: [%v]", debugStatement)
 	return list
 }
 
@@ -74,6 +79,7 @@ func getTarget(w http.ResponseWriter, r *http.Request) {
 					unregister := prometheus.Unregister(val)
 					if !unregister {
 						logger.Errorf("Failed to unregister for host [%v]", target)
+						w.Write([]byte(`{"ERROR": "failed to register big ip collector"}`))
 					}
 				}
 				prometheus.Handler().ServeHTTP(w, r)
