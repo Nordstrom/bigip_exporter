@@ -6,18 +6,41 @@ import (
 	"github.com/ExpressenAB/bigip_exporter/config"
 	"github.com/juju/loggo"
 	"github.com/prometheus/client_golang/prometheus"
+	"github.com/ExpressenAB/bigip_exporter/collector"
 	"strings"
 	"github.com/pr8kerl/f5er/f5"
-	"github.com/ExpressenAB/bigip_exporter/collector"
 )
 
 var (
 	logger = loggo.GetLogger("")
 	configuration = config.GetConfig()
+	collectors = createBigIPCollectors()
 )
 
+func createBigIPCollectors() map[string]*collector.BigipCollector{
+	configuration := config.GetConfig()
+	list := make(map[string]*collector.BigipCollector)
+	for host, _ := range configuration.Lookup {
+		bigipEndpoint := configuration.Lookup[host].Host + ":" + strconv.Itoa(configuration.Lookup[host].Port)
+		var exporterPartitionsList []string
+		if configuration.Exporter.Partitions != "" {
+			exporterPartitionsList = strings.Split(configuration.Exporter.Partitions, ",")
+		} else {
+			exporterPartitionsList = nil
+		}
+		authMethod := f5.TOKEN
+		if configuration.Lookup[host].BasicAuth {
+			authMethod = f5.BASIC_AUTH
+		}
+		bigip := f5.New(bigipEndpoint,configuration.Lookup[host].Username,configuration.Lookup[host].Password,authMethod)
+		list[host], _ = collector.NewBigipCollector(bigip, configuration.Exporter.Namespace, exporterPartitionsList)
+	}
+	return list
+}
+
 func listen(exporterBindAddress string, exporterBindPort int) {
-	http.Handle("/metrics", getTarget(prometheus.Handler()))
+	//http.Handle("/metrics", getTarget(prometheus.Handler()))
+	http.HandleFunc("/metrics", getTarget)
 	http.HandleFunc("/", func(w http.ResponseWriter, r *http.Request) {
 		w.Write([]byte(`<html>
 			<head><title>BIG-IP Exporter</title></head>
@@ -35,37 +58,33 @@ func listen(exporterBindAddress string, exporterBindPort int) {
 //Get the key from the handler
 //Return/Call the handler that is passed in as Parameter
 
-func getTarget(h http.Handler) http.Handler {
-	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+func getTarget(w http.ResponseWriter, r *http.Request) {
+	//return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		if len(r.URL.Query().Get("target")) == 0 {
 			logger.Errorf("Missing target")
 			http.Error(w, "Missing target", http.StatusUnprocessableEntity)
 			return // don't call original handler
 		}else {
-			if val, ok := configuration.Lookup[r.URL.Query().Get("target")]; ok {
-				bigipEndpoint := val.Host + ":" + strconv.Itoa(val.Port)
-				var exporterPartitionsList []string
-				if configuration.Exporter.Partitions != "" {
-					exporterPartitionsList = strings.Split(configuration.Exporter.Partitions, ",")
-				} else {
-					exporterPartitionsList = nil
+			target := r.URL.Query().Get("target")
+			if val, ok := collectors[target]; ok {
+				err := prometheus.Register(val)
+				if err != nil {
+					logger.Errorf("Error when registering collector for host: [%v]. Error: [%v]", target, err)
+					logger.Errorf("Trying to unregister current collector")
+					unregister := prometheus.Unregister(val)
+					if !unregister {
+						logger.Errorf("Failed to unregister for host [%v]", target)
+					}
 				}
-				authMethod := f5.TOKEN
-				if val.BasicAuth {
-					authMethod = f5.BASIC_AUTH
-				}
-
-				bigip := f5.New(bigipEndpoint,val.Username,val.Password,authMethod)
-				bigipCollector, _ := collector.NewBigipCollector(bigip, configuration.Exporter.Namespace, exporterPartitionsList)
-				prometheus.MustRegister(bigipCollector)
+				prometheus.Handler().ServeHTTP(w, r)
+				prometheus.Unregister(val)
 			} else {
 				//Target not found
 				logger.Errorf("Exporter does not have the configuration for target [%v]", r.URL.Query().Get("target"))
 				http.Error(w, "Target not supported", http.StatusUnprocessableEntity)
 			}
 		}
-		h.ServeHTTP(w, r)
-	})
+	//})
 }
 
 func main() {
