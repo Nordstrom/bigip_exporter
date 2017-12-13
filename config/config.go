@@ -7,20 +7,20 @@ import (
 	"github.com/juju/loggo"
 	flag "github.com/spf13/pflag"
 	"github.com/spf13/viper"
+	"github.com/ExpressenAB/bigip_exporter/collector"
+	"github.com/pr8kerl/f5er/f5"
 )
 
-type bigipConfig struct {
+type bigipEnvConfig struct {
 	Username  string `yaml:"username"`
 	Password  string `yaml:"password"`
 	BasicAuth bool   `yaml:"basic_auth"`
-	Host      string `yaml:"host"`
-	Port      int    `yaml:"port"`
+	Partitions  string `yaml:"partitions"`
 }
 
 type exporterConfig struct {
 	BindAddress string `yaml:"bind_address"`
 	BindPort    int    `yaml:"bind_port"`
-	Partitions  string `yaml:"partitions"`
 	Config      string `yaml:"config"`
 	Namespace   string `yaml:"namespace"`
 	LogLevel    string `yaml:"log_level"`
@@ -28,8 +28,8 @@ type exporterConfig struct {
 
 // Config is a container for settings modifiable by the user
 type Config struct {
-	Lookup   map[string]bigipConfig `yaml:"lookup"`
-	Exporter exporterConfig 		`yaml:"exporter"`
+	Module   map[string]bigipEnvConfig `yaml:"module"`
+	Exporter exporterConfig            `yaml:"exporter"`
 }
 
 var (
@@ -109,23 +109,53 @@ func readConfigFile(fileName string) {
 // to the program
 func GetConfig() *Config {
 	c := Config{}
-	list := viper.GetStringMap("bigip")
-	c.Lookup = make(map[string]bigipConfig)
-	for k, v := range list {
+	list := viper.GetStringMap("configs")
+
+	c.Module = make(map[string]bigipEnvConfig)
+	for env, v := range list {
 		username := v.(map[string]interface{})["username"].(string)
 		pass :=	v.(map[string]interface{})["password"].(string)
 		auth :=	v.(map[string]interface{})["basic_auth"].(bool)
-		port :=	v.(map[string]interface{})["port"].(int)
-		c.Lookup[k] = bigipConfig{username, pass, auth, k, port}
+		partitions := v.(map[string]interface{})["partitions"].(string)
+		c.Module[env] = bigipEnvConfig{
+			Username:username,
+			Password:pass,
+			BasicAuth:auth,
+			Partitions:partitions}
 	}
 	c.Exporter = exporterConfig{
 		viper.GetString("exporter.bind_address"),
 		viper.GetInt("exporter.bind_port"),
-		viper.GetString("exporter.partitions"),
 		viper.GetString("bigip_exporter.config"),
 		viper.GetString("exporter.namespace"),
 		viper.GetString("exporter.log_level"),
 	}
 	logger.Infof("Config: [%v]", c)
 	return &c
+}
+
+func (c Config) CreateBigipCollector(bigipEndpoint string, moduleName string) (collector.BigipCollector, bool) {
+	module, ok :=  c.Module[moduleName]
+	if !ok {
+		logger.Debugf("[%s] module not found.", moduleName)
+		return collector.BigipCollector{}, false
+	}else {
+		var exporterPartitionsList []string
+		if module.Partitions != "" {
+			exporterPartitionsList = strings.Split(module.Partitions, ",")
+		} else {
+			exporterPartitionsList = nil
+		}
+		authMethod := f5.TOKEN
+		if module.BasicAuth {
+			authMethod = f5.BASIC_AUTH
+		}
+		bigip := f5.New(bigipEndpoint,module.Username,module.Password,authMethod)
+		bigipCollector, err := collector.NewBigipCollector(bigip, c.Exporter.Namespace, exporterPartitionsList)
+		if err != nil {
+			logger.Errorf("When creating a new F5 colllector, an error occured. Error [%v]", err)
+			return *bigipCollector, false
+		}
+			return *bigipCollector, true
+	}
 }
