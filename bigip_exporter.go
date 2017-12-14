@@ -6,8 +6,8 @@ import (
 	"github.com/juju/loggo"
 	"github.com/prometheus/client_golang/prometheus/promhttp"
 	"github.com/prometheus/client_golang/prometheus"
-	"./config"
 	"fmt"
+	"github.com/ExpressenAB/bigip_exporter/config"
 )
 
 var (
@@ -15,33 +15,10 @@ var (
 	configuration = config.GetConfig()
 )
 
-//func createBigIPCollectors() map[string]*collector.BigipCollector{
-//	list := make(map[string]*collector.BigipCollector)
-//	for host, _ := range configuration.Lookup {
-//		bigipEndpoint := configuration.Lookup[host].Host + ":" + strconv.Itoa(configuration.Lookup[host].Port)
-//		var exporterPartitionsList []string
-//		if configuration.Exporter.Partitions != "" {
-//			exporterPartitionsList = strings.Split(configuration.Exporter.Partitions, ",")
-//		} else {
-//			exporterPartitionsList = nil
-//		}
-//		authMethod := f5.TOKEN
-//		if configuration.Lookup[host].BasicAuth {
-//			authMethod = f5.BASIC_AUTH
-//		}
-//		bigip := f5.New(bigipEndpoint,configuration.Lookup[host].Username,configuration.Lookup[host].Password,authMethod)
-//		list[host], _ = collector.NewBigipCollector(bigip, configuration.Exporter.Namespace, exporterPartitionsList)
-//	}
-//	debugStatement := ""
-//	for key, value := range list {
-//		debugStatement += fmt.Sprintf("Key [%s], Value [%s]", key, value)
-//	}
-//	logger.Debugf("List of collectors: [%v]", debugStatement)
-//	return list
-//}
 
 func listen(exporterBindAddress string, exporterBindPort int) {
 	http.HandleFunc("/metrics", handler)
+	http.HandleFunc("/health-check", HealthCheckHandler)
 	http.HandleFunc("/", func(w http.ResponseWriter, r *http.Request) {
 		w.Write([]byte(`<html>
 			<head><title>BIG-IP Exporter</title></head>
@@ -53,6 +30,13 @@ func listen(exporterBindAddress string, exporterBindPort int) {
 	})
 	exporterBind := exporterBindAddress + ":" + strconv.Itoa(exporterBindPort)
 	logger.Criticalf("Process failed: %s", http.ListenAndServe(exporterBind, nil))
+}
+
+func HealthCheckHandler(w http.ResponseWriter, r *http.Request) {
+	logger.Tracef("health-check called")
+	w.WriteHeader(http.StatusOK)
+	w.Header().Set("Content-Type", "application/json")
+	w.Write([]byte(`{"alive": true}`))
 }
 
 func handler(w http.ResponseWriter, r *http.Request) {
@@ -79,6 +63,6 @@ func handler(w http.ResponseWriter, r *http.Request) {
 }
 
 func main() {
-	logger.Debugf("Config: [%v]", configuration)
+	logger.Debugf("Config: [%v]", configuration.String())
 	listen(configuration.Exporter.BindAddress, configuration.Exporter.BindPort)
 }

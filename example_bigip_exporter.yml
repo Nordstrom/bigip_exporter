@@ -1,18 +1,22 @@
----
-bigip:
-  biptstlab:
-    username: admin
-    password: password2
+
+configs:
+  prod_env:
+    username: "service_account_for_prod_bigips"
+    password: "service_account_password"
+    partitions:
     basic_auth: True
-    port: 443
-  biptstlab2:
-    username: admin2
-    password: password2
+  test_env:
+    username: "service_account_for_test_bigips"
+    password: "service_account_password"
+    partitions:
     basic_auth: True
-    port: 443
+  dmz_env:
+    username: "service_account_for_dmz_bigips"
+    password: "service_account_password"
+    partitions:
+    basic_auth: True
 exporter:
   bind_address: 0.0.0.0
-  bind_port: 9142
-  partitions: some,partitions
-  namespace: some_namespace
+  bind_port: 9000
+  namespace:
   log_level: debug

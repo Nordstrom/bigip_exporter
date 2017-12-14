@@ -44,7 +44,7 @@ func NewBigipCollector(bigip *f5.Device, namespace string, partitionsList []stri
 
 // Collect collects all metrics exported by this exporter by delegating
 // to the different collectors
-func (c *BigipCollector) Collect(ch chan<- prometheus.Metric) {
+func (c BigipCollector) Collect(ch chan<- prometheus.Metric) {
 	wg := sync.WaitGroup{}
 	wg.Add(len(c.collectors))
 	start := time.Now()
@@ -63,7 +63,7 @@ func (c *BigipCollector) Collect(ch chan<- prometheus.Metric) {
 
 // Describe describes all metrics exported by this exporter by delegating
 // to the different collectors
-func (c *BigipCollector) Describe(ch chan<- *prometheus.Desc) {
+func (c BigipCollector) Describe(ch chan<- *prometheus.Desc) {
 	for _, collector := range c.collectors {
 		collector.Describe(ch)
 	}

@@ -9,6 +9,7 @@ import (
 	"github.com/spf13/viper"
 	"github.com/ExpressenAB/bigip_exporter/collector"
 	"github.com/pr8kerl/f5er/f5"
+	"fmt"
 )
 
 type bigipEnvConfig struct {
@@ -112,16 +113,13 @@ func GetConfig() *Config {
 	list := viper.GetStringMap("configs")
 
 	c.Module = make(map[string]bigipEnvConfig)
-	for env, v := range list {
-		username := v.(map[string]interface{})["username"].(string)
-		pass :=	v.(map[string]interface{})["password"].(string)
-		auth :=	v.(map[string]interface{})["basic_auth"].(bool)
-		partitions := v.(map[string]interface{})["partitions"].(string)
+	for env := range list {
 		c.Module[env] = bigipEnvConfig{
-			Username:username,
-			Password:pass,
-			BasicAuth:auth,
-			Partitions:partitions}
+			Username: 	viper.GetString(fmt.Sprintf("configs.%s.username", env)),
+			Password: 	viper.GetString(fmt.Sprintf("configs.%s.password", env)),
+			BasicAuth: 	viper.GetBool(fmt.Sprintf("configs.%s.basic_auth", env)),
+			Partitions: viper.GetString(fmt.Sprintf("configs.%s.partitions", env)),
+			}
 	}
 	c.Exporter = exporterConfig{
 		viper.GetString("exporter.bind_address"),
@@ -130,7 +128,7 @@ func GetConfig() *Config {
 		viper.GetString("exporter.namespace"),
 		viper.GetString("exporter.log_level"),
 	}
-	logger.Infof("Config: [%v]", c)
+	//logger.Infof("Config: [%v]", c) // if uncommented, will print password. Instead use c.String()
 	return &c
 }
 
@@ -158,4 +156,16 @@ func (c Config) CreateBigipCollector(bigipEndpoint string, moduleName string) (c
 		}
 			return *bigipCollector, true
 	}
+}
+
+func (c Config) String() string {
+	stringBuilder := "["
+	for env := range c.Module {
+		username := c.Module[env].Username
+		basic_auth := c.Module[env].BasicAuth
+		partitions := c.Module[env].Partitions
+		stringBuilder += fmt.Sprintf("{%s:[username: %s, basic_auth: %s, partitions: %s]},", env, username, basic_auth, partitions)
+	}
+	stringBuilder += fmt.Sprintf("Expoerter: %s", c.Exporter)
+	return stringBuilder
 }
